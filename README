@@ -1,71 +1,50 @@
-AHR Downloader
-Resolving the chicken-and-egg syndrome of offline package management — one τ₀ timestamp at a time.
-AHR Downloader is two small, tested shell scripts (d01_exe.sh + d01_dep.sh) that resolve and fetch a package’s full dependency closure on an online Debian/Ubuntu host, bundle the resulting .deb files into a portable tarball, and let the target air-gapped system install packages using apt so dependency ordering and configuration are handled correctly. No apt-offline, no zip, no extra helpers. Intended for lab use and research by sysadmins running as root.
-Quick start (30 seconds)
+# AHR Downloader
+"Resolving the chicken-and-egg syndrome of offline package management — one τ₀ timestamp at a time."
+
+AHR Downloader is two small, tested shell scripts (d01_exe.sh + d01_dep.sh) 
+that resolve and fetch a package’s full dependency closure on an online Debian
+or Ubuntu host, bundle the resulting .deb files into a portable tarball, and 
+let the target air-gapped system install packages using apt so dependency ordering 
+and configuration are handled correctly. 
+No apt-offline, no zip, no extra helpers. 
+Intended for lab use and research by sysadmins running as root.
+
+# Usage, Basic Run (assume path to /offline-repo)
+# ...
+su root     # or sudo -i
+./d01_exe.sh
+
+# Quick start (30 seconds)
 On an ONLINE Debian-like machine (as root):
-bash
-git clone <your-repo> && cd <repo>chmod +x *.shsu root                    # or: sudo -i./d01_exe.sh
     • Enter a profile name (e.g., base or myapp) 
     • Enter package names (e.g., "openssl iftop tree") or press Enter for defaults 
     • A timestamped .tar.gz bundle will be created in ./TAR/ 
+
 On the OFFLINE machine (as root):
-bash
-su roottar -xzf TAR/<timestamp><profile>.tar.gz -C /offline-repocd /offline-repo# Copy .deb files into apt cache so apt handles orderingcp ./*.deb /var/cache/apt/archives/# Install via apt (recommended)apt install -y <package-name>
-Why this exists
-Bootstrapping offline apt workflows is a chicken-and-egg problem: helper tools frequently require packages that must themselves be downloaded first. AHR Downloader was created for lab research and system studies to reliably bootstrap such workflows without requiring any third‑party helper packages on the online host. It is self-bootstrapping (it has been used to resolve apt-offline itself).
+su root
+tar -xzf TAR/<timestamp><profile>.tar.gz -C /offline-repo
+cd /offline-repo
+
+# Copy .deb files into apt cache so apt handles ordering
+cp ./*.deb /var/cache/apt/archives/
+
+# Install via apt (recommended)
+apt install -y <package-name>
+
+# Why this exists
+Bootstrapping offline apt workflows is a chicken-and-egg problem: 
+helper tools frequently require packages that must themselves be downloaded first. 
+AHR Downloader was created for lab research and system studies to reliably bootstrap 
+such workflows without requiring any third‑party helper packages on the online host. 
+It is self-bootstrapping (it has been used to resolve apt-offline itself).
+
 Key properties
     • Minimal: only standard apt tooling required on the online host. 
     • Recursive: collects Depends, Pre-Depends, Recommends via BFS traversal. 
     • Deterministic: timestamped bundles and explicit inventories for auditing. 
-    • Lab-focused: designed for root-run reproducibility in research environments. 
-Files
-    • d01_exe.sh — primary orchestrator: prompts, composes dependency lists, downloads, bundles. 
-    • d01_dep.sh — worker: computes dependency closure for a single package. 
-Runtime outputs
-    • INV// — downloaded .deb files 
-    • RPT// — reports: 
-        ◦ *.depends — per-package dependency lists 
-        ◦ *.dnld — deduplicated download list 
-        ◦ *.debs.inv — successful downloads (inventory with filenames) 
-        ◦ *.ghost.inv — missing packages 
-    • TAR/.tar.gz — portable bundle for transfer 
-Usage details
-Profile input
-    • Profile name: letters, digits, hyphen, underscore; max 64 chars. 
-    • If empty or invalid → downloads go to INV/base/ and no tarball is created. 
-    • Package list: space-separated package names. If empty → default stack: apt-offline apt-utils apt-file apt-listchanges apt-show-version zip 
-Online download flow (run as root)
-    1. Run ./d01_exe.sh. 
-    2. For each package, d01_exe.sh calls d01_dep.sh which writes .depends containing the dependency closure. 
-    3. .depends files are concatenated and deduplicated into a .dnld list. 
-    4. apt-get download fetches .deb files into INV//; successes go to .debs.inv, failures to .ghost.inv. 
-    5. The INV// tree is tarred into TAR/.tar.gz. 
-Offline install (target machine; run as root)
-    1. Extract to a clean dir: tar -xzf bundle.tar.gz -C /tmp/ 
-    2. Copy .deb files into apt cache: cp /tmp//*.deb /var/cache/apt/archives/ 
-    3. Install desired packages via apt so apt handles ordering: apt install -y 
-Do not rely on naive bulk-install commands (dpkg -i .deb or apt install ./.deb) — alphabetical or arbitrary order can break systems. AHR’s method uses apt’s resolver to avoid that.
-Implementation highlights
-    • d01_dep.sh: 
-        ◦ Uses apt-cache show to extract Depends, Pre-Depends and Recommends. 
-        ◦ Strips version constraints and simple arch qualifiers (e.g., :amd64). 
-        ◦ Performs breadth-first traversal until the dependency closure stabilizes and emits .depends. 
-    • d01_exe.sh:
-        ◦ Prompts for profile and package list (with safe defaults). 
-        ◦ Invokes d01_dep.sh per package, concatenates .depends files into a deduplicated .dnld. 
-        ◦ Downloads packages with apt-get download, records inventories (.debs.inv and .ghost.inv), and bundles INV into TAR/. 
-Limitations & lab guidance
-    • Designed and tested for root usage (su root or sudo -i). Behavior under limited sudoers configurations is not guaranteed. 
-    • Basic arch-suffix stripping only; does not fully model multi-arch conditionals or alternate providers. 
-    • Virtual packages and some meta-packages may need manual attention. 
-    • Run bundle generation on a host matching the target release and architecture for best fidelity. 
-    • Test generated bundles on a disposable offline VM before deploying to production. 
-Why AHR avoids naive bulk-install
-Installing many .deb files directly risks incorrect ordering (alphabetical vs dependency graph). With large closures that can leave packages unpacked or unconfigured. By placing .debs into /var/cache/apt/archives and invoking apt on package names, the package manager computes the correct installation order and runs necessary configuration hooks — the chicken-and-egg is solved by letting apt do the ordering work.
-Lab-friendly philosophy
-AHR is intentionally lean and deterministic: small scripts, transparent inventories, timestamped bundles, and explicit report files so you can examine, iterate, and reason about each bootstrap run for research and OS behavior studies.
-File Structure
-text
+    • Lab-focused: designed for root-run reproducibility in research environments.
+
+# Files
 your-repo/
 ├── d01_exe.sh          # Primary orchestrator
 ├── d01_dep.sh          # Dependency resolver (worker)
@@ -81,3 +60,45 @@ your-repo/
 │       └── *.ghost.inv # Missing packages
 └── TAR/                # Final portable bundles
     └── <timestamp><profile>.tar.gz
+
+# Usage details
+Profile input
+    • Profile name: letters, digits, hyphen, underscore; max 64 chars. 
+    • If empty or invalid → downloads go to INV/base/ and no tarball is created. 
+    • Package list: space-separated package names. If empty → default stack: apt-offline apt-utils apt-file apt-listchanges apt-show-version zip 
+Online download flow (run as root)
+    1. Run ./d01_exe.sh. 
+    2. For each package, d01_exe.sh calls d01_dep.sh which writes .depends containing the dependency closure. 
+    3. .depends files are concatenated and deduplicated into a .dnld list. 
+    4. apt-get download fetches .deb files into INV//; successes go to .debs.inv, failures to .ghost.inv. 
+    5. The INV// tree is tarred into TAR/.tar.gz. 
+Offline install (target machine; run as root)
+    1. Extract to a clean dir: tar -xzf bundle.tar.gz -C /tmp/ 
+    2. Copy .deb files into apt cache: cp /tmp//*.deb /var/cache/apt/archives/ 
+    3. Install desired packages via apt so apt handles ordering: apt install -y 
+Do not rely on naive bulk-install commands (dpkg -i .deb or apt install ./.deb) — alphabetical or arbitrary order can break systems. AHR’s method uses apt’s resolver to avoid that.
+
+# Implementation highlights
+    • d01_dep.sh: 
+        ◦ Uses apt-cache show to extract Depends, Pre-Depends and Recommends. 
+        ◦ Strips version constraints and simple arch qualifiers (e.g., :amd64). 
+        ◦ Performs breadth-first traversal until the dependency closure stabilizes and emits .depends. 
+    • d01_exe.sh:
+        ◦ Prompts for profile and package list (with safe defaults). 
+        ◦ Invokes d01_dep.sh per package, concatenates .depends files into a deduplicated .dnld. 
+        ◦ Downloads packages with apt-get download, records inventories (.debs.inv and .ghost.inv), and bundles INV into TAR/. 
+
+# Limitations & lab guidance
+    • Designed and tested for root usage (su root or sudo -i). Behavior under limited sudoers configurations is not guaranteed. 
+    • Basic arch-suffix stripping only; does not fully model multi-arch conditionals or alternate providers. 
+    • Virtual packages and some meta-packages may need manual attention. 
+    • Run bundle generation on a host matching the target release and architecture for best fidelity. 
+    • Test generated bundles on a disposable offline VM before deploying to production. 
+
+# Why AHR avoids naive bulk-install
+Installing many .deb files directly risks incorrect ordering (alphabetical vs dependency graph). 
+With large closures that can leave packages unpacked or unconfigured. By placing .debs into /var/cache/apt/archives and invoking apt on package names, the package manager computes the correct installation order and runs necessary configuration hooks — the chicken-and-egg is solved by letting apt do the ordering work.
+
+# Lab-friendly philosophy
+AHR is intentionally lean and deterministic: small scripts, transparent inventories, timestamped bundles, and explicit report files so you can examine, iterate, and reason about each bootstrap run for research and OS behavior studies.
+# ...
